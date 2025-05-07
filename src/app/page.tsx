@@ -190,7 +190,7 @@ export default function Home() {
   useEffect(() => {
     if (showAIPopup) {
       const text =
-        "Looks like you don't have that many meetings today. Shall I play some music to help you get into your Flow State?"
+        "LLooks like you don't have that many meetings today. Shall I play some music to help you get into your Flow State?"
       let i = 0
       setTypedText("")
       setIsTypingComplete(false)
