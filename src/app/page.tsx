@@ -17,7 +17,7 @@ import {
 } from "lucide-react"
 import { useCalendar } from "@/lib/CalendarContext"
 import { formatMonthDay, getToday, getPrevWeek, getNextWeek } from "@/lib/dateUtils"
-import { getCurrentSong, SongInfo, getRandomSongExcept, getSongById } from "@/lib/musicUtils"
+import { getCurrentSong, SongInfo, getRandomSongExcept } from "@/lib/musicUtils"
 
 import WeekView from "./components/WeekView"
 import DayView from "./components/DayView"
