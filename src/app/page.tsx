@@ -38,7 +38,7 @@ export default function Home() {
   useEffect(() => {
     if (showAIPopup) {
       const text =
-        "Looks like you don't have that many meetings today. Shall I play some Hans Zimmer essentials to help you get into your Flow State?"
+        "LLooks like you don't have that many meetings today. Shall I play some Hans Zimmer essentials to help you get into your Flow State?"
       let i = 0
       const typingInterval = setInterval(() => {
         if (i < text.length) {
@@ -54,9 +54,8 @@ export default function Home() {
   }, [showAIPopup])
 
   const [currentView, setCurrentView] = useState("week")
-  const [currentMonth, setCurrentMonth] = useState("March 2025")
-  const [currentDate, setCurrentDate] = useState("March 5")
-  // Define the event type for proper TypeScript typing
+  const [currentMonth, _setCurrentMonth] = useState("May 2025")
+  const [currentDate, _setCurrentDate] = useState("May 5")
   type CalendarEvent = {
     id: number
     title: string
