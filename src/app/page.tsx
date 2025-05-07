@@ -16,6 +16,7 @@ import {
   Music,
 } from "lucide-react"
 import { useCalendar } from "@/lib/CalendarContext"
+import { CalendarEvent } from "@/lib/CalendarContext"
 import { formatMonthDay, getToday, getPrevWeek, getNextWeek } from "@/lib/dateUtils"
 import { getCurrentSong, SongInfo, getRandomSongExcept } from "@/lib/musicUtils"
 
@@ -25,6 +26,7 @@ import MonthView from "./components/MonthView"
 import MiniCalendar from "./components/MiniCalendar"
 import EventDetail from "./components/EventDetail"
 import EventForm from "./components/EventForm"
+import Navbar from "./components/Navbar"
 
 export default function Home() {
   const { 
@@ -33,6 +35,8 @@ export default function Home() {
     currentView, 
     setCurrentView, 
     selectedEvent,
+    setSelectedEvent,
+    events,
   } = useCalendar()
   
   const [isLoaded, setIsLoaded] = useState(false)
@@ -47,6 +51,11 @@ export default function Home() {
   const [duration, setDuration] = useState(0)
   const [currentSong, setCurrentSong] = useState<SongInfo>(getCurrentSong())
   const [isDraggingTimeline, setIsDraggingTimeline] = useState(false)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [searchResults, setSearchResults] = useState<CalendarEvent[]>([])
+  const [showSearchResults, setShowSearchResults] = useState(false)
+  const [focusedResultIndex, setFocusedResultIndex] = useState(-1)
+  const [isSearching, setIsSearching] = useState(false)
   
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -358,6 +367,67 @@ export default function Home() {
     }
   }, []);
 
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    setFocusedResultIndex(-1);
+    
+    if (value.trim() === "") {
+      setShowSearchResults(false);
+      return;
+    }
+    
+    setIsSearching(true);
+    
+    const searchTimer = setTimeout(() => {
+      const filteredEvents = events.filter(event => 
+        event.title.toLowerCase().includes(value.toLowerCase()) ||
+        event.description.toLowerCase().includes(value.toLowerCase()) ||
+        event.location.toLowerCase().includes(value.toLowerCase()) ||
+        event.organizer.toLowerCase().includes(value.toLowerCase())
+      );
+      
+      setSearchResults(filteredEvents);
+      setShowSearchResults(true);
+      setIsSearching(false);
+    }, 300);
+    
+    return () => clearTimeout(searchTimer);
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      setSearchTerm('');
+      setShowSearchResults(false);
+      return;
+    }
+    
+    if (!showSearchResults || searchResults.length === 0) return;
+    
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setFocusedResultIndex(prev => 
+        prev < searchResults.length - 1 ? prev + 1 : prev
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setFocusedResultIndex(prev => (prev > 0 ? prev - 1 : 0));
+    } else if (e.key === 'Enter' && focusedResultIndex >= 0) {
+      e.preventDefault();
+      const selectedResult = searchResults[focusedResultIndex];
+      if (selectedResult) {
+        handleSearchResultClick(selectedResult);
+      }
+    }
+  };
+
+  const handleSearchResultClick = (event: CalendarEvent) => {
+    setSelectedEvent(event);
+    setCurrentDate(new Date(event.date));
+    setShowSearchResults(false);
+    setSearchTerm('');
+  };
+
   return (
     <div className="relative min-h-screen w-full overflow-hidden">
       {/* Background Image */}
@@ -370,33 +440,23 @@ export default function Home() {
       />
 
       {/* Navigation */}
-      <header
-        className={`absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-8 py-6 opacity-0 ${isLoaded ? "animate-fade-in" : ""}`}
-        style={{ animationDelay: "0.2s" }}
-      >
-        <div className="flex items-center gap-4">
-          <Menu className="h-6 w-6 text-white" />
-          <span className="text-2xl font-semibold text-white drop-shadow-lg">Calendar</span>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/70" />
-            <input
-              type="text"
-              placeholder="Search"
-              className="rounded-full bg-white/10 backdrop-blur-sm pl-10 pr-4 py-2 text-white placeholder:text-white/70 border border-white/20 focus:outline-none focus:ring-2 focus:ring-white/30"
-            />
-          </div>
-          <Settings className="h-6 w-6 text-white drop-shadow-md" />
-          <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold shadow-md">
-            U
-          </div>
-        </div>
-      </header>
+      <Navbar 
+        isLoaded={isLoaded}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        searchResults={searchResults}
+        showSearchResults={showSearchResults}
+        setShowSearchResults={setShowSearchResults}
+        isSearching={isSearching}
+        focusedResultIndex={focusedResultIndex}
+        handleSearchChange={handleSearchChange}
+        handleSearchKeyDown={handleSearchKeyDown}
+        handleSearchResultClick={handleSearchResultClick}
+        setShowAddEventForm={setShowAddEventForm}
+      />
 
       {/* Main Content */}
-      <main className="relative h-screen w-full pt-20 flex">
+      <main className="relative h-screen w-full pt-24 flex">
         {/* Sidebar */}
         <div
           className={`w-64 h-full bg-white/10 backdrop-blur-lg p-4 shadow-xl border-r border-white/20 rounded-tr-3xl opacity-0 ${isLoaded ? "animate-fade-in" : ""} flex flex-col justify-between`}
