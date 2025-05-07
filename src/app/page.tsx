@@ -1,21 +1,15 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import {
   ChevronLeft,
   ChevronRight,
   Plus,
-  Pause,
-  Sparkles,
-  X,
-  Play,
-  Music,
 } from "lucide-react"
 import { useCalendar } from "@/lib/CalendarContext"
 import { CalendarEvent } from "@/lib/CalendarContext"
 import { formatMonthDay, getToday, getPrevWeek, getNextWeek } from "@/lib/dateUtils"
-import { getCurrentSong, SongInfo, getRandomSongExcept } from "@/lib/musicUtils"
 
 import WeekView from "./components/WeekView"
 import DayView from "./components/DayView"
@@ -24,6 +18,7 @@ import MiniCalendar from "./components/MiniCalendar"
 import EventDetail from "./components/EventDetail"
 import EventForm from "./components/EventForm"
 import Navbar from "./components/Navbar"
+import Features from "./components/Features"
 
 export default function Home() {
   const { 
@@ -37,183 +32,13 @@ export default function Home() {
   } = useCalendar()
   
   const [isLoaded, setIsLoaded] = useState(false)
-  const [showAIPopup, setShowAIPopup] = useState(false)
-  const [typedText, setTypedText] = useState("")
-  const [isTypingComplete, setIsTypingComplete] = useState(false)
-  const [isPlaying, setIsPlaying] = useState(false)
   const [showAddEventForm, setShowAddEventForm] = useState(false)
-  const [showFloatingMusicControl, setShowFloatingMusicControl] = useState(false)
-  const [isHoveringMusicControl, setIsHoveringMusicControl] = useState(false)
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
-  const [currentSong, setCurrentSong] = useState<SongInfo>(getCurrentSong())
-  const [isDraggingTimeline, setIsDraggingTimeline] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [searchResults, setSearchResults] = useState<CalendarEvent[]>([])
   const [showSearchResults, setShowSearchResults] = useState(false)
   const [focusedResultIndex, setFocusedResultIndex] = useState(-1)
   const [isSearching, setIsSearching] = useState(false)
   
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const progressBarRef = useRef<HTMLDivElement>(null)
-  
-  const updateProgress = useCallback(() => {
-    if (audioRef.current) {
-      setCurrentTime(audioRef.current.currentTime);
-    }
-  }, []);
-  
-  const createAndSetupAudio = useCallback((src: string) => {
-    console.log("[Audio] Creating new audio element with source:", src);
-    
-    const newAudio = new Audio(src);
-    
-    if (audioRef.current) {
-      console.log("[Audio] Cleaning up previous audio element");
-      
-      try {
-        audioRef.current.onended = null;
-        audioRef.current.ontimeupdate = null;
-        audioRef.current.onloadedmetadata = null;
-        audioRef.current.onerror = null;
-        
-        audioRef.current.pause();
-        audioRef.current.src = '';
-        audioRef.current.load();
-      } catch (err) {
-        console.error("[Audio] Error during cleanup:", err);
-      }
-    }
-    
-    audioRef.current = newAudio;
-    
-    audioRef.current.ontimeupdate = updateProgress;
-    
-    audioRef.current.onloadedmetadata = () => {
-      console.log("[Audio] Metadata loaded, duration:", newAudio.duration);
-      setDuration(newAudio.duration);
-    };
-    
-    audioRef.current.onerror = (e) => {
-      console.error("[Audio] Error with audio element:", e);
-    };
-    
-    return newAudio;
-  }, [updateProgress]);
-  
-  const playSong = useCallback((song: SongInfo) => {
-    console.log("[Audio] Playing song:", song.title, "file:", song.file);
-    
-    setCurrentSong(song);
-    
-    const audio = createAndSetupAudio(song.file);
-    
-    setIsPlaying(true);
-    
-    setCurrentTime(0);
-    
-    audio.onended = () => {
-      console.log("[Audio] Song ended, picking a new song");
-      
-      const nextSong = getRandomSongExcept(song.id);
-      console.log("[Audio] Selected next song:", nextSong.title, "with ID:", nextSong.id);
-      
-      playSong(nextSong);
-    };
-    
-    setTimeout(() => {
-      console.log("[Audio] Starting playback after delay");
-      try {
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => {
-              console.log("[Audio] Successfully started playback");
-            })
-            .catch((error: Error) => {
-              console.error("[Audio] Failed to start playback:", error);
-              
-              const playOnUserInteraction = () => {
-                console.log("[Audio] User interaction detected, trying to play again");
-                audio.play()
-                  .then(() => console.log("[Audio] Playback started after user interaction"))
-                  .catch((err: Error) => console.error("[Audio] Still failed to play:", err));
-                document.removeEventListener('click', playOnUserInteraction);
-              };
-              
-              document.addEventListener('click', playOnUserInteraction, { once: true });
-            });
-        }
-      } catch (err) {
-        console.error("[Audio] Unexpected error starting playback:", err);
-      }
-    }, 100);
-  }, [createAndSetupAudio]);
-
-  const togglePlay = useCallback(() => {
-    console.log("[Audio] Toggle play called, current state:", isPlaying);
-    const newPlayingState = !isPlaying;
-    setIsPlaying(newPlayingState);
-    
-    if (newPlayingState) {
-      console.log("[Audio] Attempting to play audio");
-      if (!audioRef.current) {
-        console.log("[Audio] No audio element, creating new one");
-        const song = getCurrentSong();
-        playSong(song);
-      } else {
-        console.log("[Audio] Playing existing audio");
-        audioRef.current.play().catch(err => {
-          console.error("[Audio] Error playing audio:", err);
-          playSong(currentSong);
-        });
-      }
-    } else {
-      console.log("[Audio] Pausing audio");
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
-    }
-  }, [isPlaying, currentSong, playSong]);
-
-  const handleYesClick = useCallback(() => {
-    console.log("[Audio] Yes button clicked - starting music");
-    
-    setShowAIPopup(false);
-    setShowFloatingMusicControl(true);
-    
-    const song = getCurrentSong();
-    playSong(song);
-  }, [playSong]);
-
-  const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60)
-    const seconds = Math.floor(time % 60)
-    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`
-  }
-
-  useEffect(() => {
-    if (showAIPopup) {
-      const text =
-        "LLooks like you don't have that many meetings today. Shall I play some music to help you get into your Flow State?"
-      let i = 0
-      setTypedText("")
-      setIsTypingComplete(false)
-      const typingInterval = setInterval(() => {
-        if (i < text.length) {
-          setTypedText((prev) => prev + text.charAt(i))
-          i++
-        } else {
-          clearInterval(typingInterval)
-          setIsTypingComplete(true)
-        }
-      }, 50)
-
-      return () => clearInterval(typingInterval)
-    }
-  }, [showAIPopup])
-
   const handlePrevPeriod = () => {
     if (currentView === 'week') {
       setCurrentDate(getPrevWeek(currentDate));
@@ -246,123 +71,12 @@ export default function Home() {
     setCurrentDate(getToday());
   };
 
-  const handleClosePopup = () => {
-    setShowAIPopup(false);
-    if (isPlaying) {
-      setShowFloatingMusicControl(true);
-    }
-  }
-
   const myCalendars = [
     { name: "My Calendar", color: "bg-blue-500" },
     { name: "Work", color: "bg-green-500" },
     { name: "Personal", color: "bg-purple-500" },
     { name: "Family", color: "bg-orange-500" },
   ]
-
-  const handleMouseEnter = () => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-    setIsHoveringMusicControl(true);
-  };
-
-  const handleMouseLeave = () => {
-    hoverTimeoutRef.current = setTimeout(() => {
-      setIsHoveringMusicControl(false);
-    }, 500);
-  };
-
-  const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!progressBarRef.current || !audioRef.current) return;
-    
-    const rect = progressBarRef.current.getBoundingClientRect();
-    const clickPosition = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-    const percentage = clickPosition / rect.width;
-    const newTime = percentage * duration;
-    
-    audioRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
-  };
-  
-  const handleTimelineDragStart = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!progressBarRef.current || !audioRef.current) return;
-    
-    setIsDraggingTimeline(true);
-    
-    const rect = progressBarRef.current.getBoundingClientRect();
-    const dragPosition = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-    const percentage = dragPosition / rect.width;
-    const newTime = percentage * duration;
-    
-    audioRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
-  };
-  
-  const handleTimelineDragMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isDraggingTimeline || !progressBarRef.current || !audioRef.current) return;
-    
-    const rect = progressBarRef.current.getBoundingClientRect();
-    const dragPosition = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-    const percentage = dragPosition / rect.width;
-    const newTime = percentage * duration;
-    
-    requestAnimationFrame(() => {
-      audioRef.current!.currentTime = newTime;
-      setCurrentTime(newTime);
-    });
-  };
-  
-  const handleTimelineDragEnd = () => {
-    setIsDraggingTimeline(false);
-  };
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isDraggingTimeline && progressBarRef.current && audioRef.current) {
-        const rect = progressBarRef.current.getBoundingClientRect();
-        const dragPosition = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-        const percentage = dragPosition / rect.width;
-        const newTime = percentage * duration;
-        
-        requestAnimationFrame(() => {
-          audioRef.current!.currentTime = newTime;
-          setCurrentTime(newTime);
-        });
-      }
-    };
-    
-    const handleMouseUp = () => {
-      setIsDraggingTimeline(false);
-    };
-    
-    if (isDraggingTimeline) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    }
-    
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDraggingTimeline, duration]);
-
-  useEffect(() => {
-    setIsLoaded(true)
-    
-    const popupTimer = setTimeout(() => {
-      setShowAIPopup(true)
-    }, 3000)
-    
-    return () => {
-      clearTimeout(popupTimer)
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.currentTime = 0
-      }
-    }
-  }, []);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -424,6 +138,10 @@ export default function Home() {
     setShowSearchResults(false);
     setSearchTerm('');
   };
+
+  useEffect(() => {
+    setIsLoaded(true);
+  }, []);
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden">
@@ -555,113 +273,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* AI Popup */}
-        {showAIPopup && (
-          <div className="fixed bottom-8 right-8 z-20">
-            <div className="w-[450px] relative bg-gradient-to-br from-blue-400/30 via-blue-500/30 to-blue-600/30 backdrop-blur-lg p-6 rounded-2xl shadow-xl border border-blue-300/30 text-white">
-              <button
-                onClick={handleClosePopup}
-                className="absolute top-2 right-2 text-white/70 hover:text-white transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-              <div className="flex gap-3">
-                <div className="flex-shrink-0">
-                  <Sparkles className="h-5 w-5 text-blue-300" />
-                </div>
-                <div className="min-h-[80px]">
-                  <p className="text-base font-light">{typedText}</p>
-                </div>
-              </div>
-              
-              {isTypingComplete && (
-                <div className="mt-6 flex gap-3 animate-fade-in">
-                  <button
-                    onClick={handleYesClick}
-                    className="flex-1 py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-sm transition-colors font-medium"
-                  >
-                    Yes
-                  </button>
-                  <button
-                    onClick={handleClosePopup}
-                    className="flex-1 py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-sm transition-colors font-medium"
-                  >
-                    No
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Floating Music Control when popup is closed but music is playing */}
-        {showFloatingMusicControl && (
-          <div className="fixed bottom-8 right-8 z-20 opacity-0 animate-fade-in">
-            {/* Hover info card - Apple Music inspired */}
-            <div 
-              className={`absolute bottom-16 right-0 w-64 bg-gradient-to-br from-blue-400/80 via-blue-500/80 to-blue-600/80 backdrop-blur-lg p-4 rounded-xl shadow-xl border border-blue-300/30 text-white mb-2 transition-all duration-300 ease-in-out ${isHoveringMusicControl ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}
-              onMouseEnter={handleMouseEnter}
-              onMouseLeave={handleMouseLeave}
-            >
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-md bg-blue-300/20 flex items-center justify-center">
-                  <Music className="h-6 w-6 text-blue-100" />
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-medium text-sm leading-tight">{currentSong.title}</h4>
-                  <p className="text-xs text-white/80">{currentSong.artist}</p>
-                </div>
-              </div>
-              
-              {/* Progress bar with improved bidirectional responsiveness */}
-              <div 
-                ref={progressBarRef}
-                className="w-full h-1 bg-white/20 rounded-full mb-1.5 mt-3 cursor-pointer group relative"
-                onClick={handleTimelineClick}
-                onMouseDown={handleTimelineDragStart}
-                onMouseMove={handleTimelineDragMove}
-                onMouseUp={handleTimelineDragEnd}
-                onMouseLeave={() => isDraggingTimeline && handleTimelineDragEnd()}
-              >
-                <div 
-                  className="absolute inset-0 h-full bg-white/80 rounded-full"
-                  style={{
-                    width: `${(currentTime / duration) * 100}%`,
-                    transition: isDraggingTimeline ? 'none' : 'width 300ms linear'
-                  }}
-                ></div>
-                
-                {/* Drag handle with improved positioning */}
-                <div 
-                  className={`absolute w-3 h-3 bg-white rounded-full shadow-lg top-1/2 -translate-y-1/2 ${isDraggingTimeline ? 'opacity-100 scale-110' : 'opacity-0 group-hover:opacity-100'}`}
-                  style={{
-                    left: `${(currentTime / duration) * 100}%`,
-                    transform: `translateY(-50%) translateX(-50%)`,
-                    transition: isDraggingTimeline ? 'none' : 'left 300ms linear, opacity 200ms ease'
-                  }}
-                ></div>
-              </div>
-              
-              {/* Time */}
-              <div className="flex justify-between text-xs text-white/80">
-                <span>{formatTime(currentTime)}</span>
-                <span>{formatTime(duration)}</span>
-              </div>
-            </div>
-            
-            {/* Circular play/pause button */}
-            <button
-              onClick={() => {
-                togglePlay();
-              }}
-              className="w-12 h-12 flex items-center justify-center rounded-full bg-blue-500/70 backdrop-blur-lg shadow-xl border border-blue-300/30 text-white hover:bg-blue-500/80 transition-colors"
-              onMouseEnter={handleMouseEnter}
-              onMouseLeave={handleMouseLeave}
-            >
-              {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-            </button>
-          </div>
-        )}
+        {/* AI Features component */}
+        <Features />
 
         {/* Event Detail View */}
         {selectedEvent && <EventDetail />}

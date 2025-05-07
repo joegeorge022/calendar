@@ -100,8 +100,8 @@ export default function Navbar({
           
           {/* Search Results Dropdown */}
           {showSearchResults && (
-            <div className="absolute left-0 w-72 mt-2 bg-white/20 backdrop-blur-lg border border-white/20 shadow-xl z-[100] max-h-[300px] overflow-y-auto animate-fade-in-fast rounded-lg">
-              <div className="rounded-lg overflow-hidden">
+            <div className="absolute left-0 w-72 mt-2 bg-gradient-to-br from-blue-400/30 via-cyan-500/30 to-teal-400/30 backdrop-blur-xl border border-white/10 shadow-xl z-[100] max-h-[300px] overflow-y-auto animate-fade-in-fast rounded-3xl">
+              <div className="rounded-3xl overflow-hidden">
                 {isSearching ? (
                   <div className="p-5 text-white text-center flex items-center justify-center">
                     <span className="mr-2">Searching</span>
@@ -115,7 +115,7 @@ export default function Navbar({
                       <div 
                         key={event.id}
                         onClick={() => handleSearchResultClick(event)}
-                        className={`p-4 cursor-pointer border-b border-white/20 last:border-b-0 transition-colors duration-150 ${index === focusedResultIndex ? 'bg-white/15' : 'hover:bg-white/15'}`}
+                        className={`p-4 cursor-pointer border-b border-white/10 last:border-b-0 transition-colors duration-150 ${index === focusedResultIndex ? 'bg-white/15' : 'hover:bg-white/15'}`}
                       >
                         <div className="flex items-center gap-2">
                           <div className={`w-3 h-3 rounded-sm ${event.color}`}></div>
@@ -129,7 +129,7 @@ export default function Navbar({
                   </>
                 ) : (
                   <div className="p-6 flex flex-col items-center">
-                    <Search className="h-5 w-5 text-white/70 mb-3" />
+                    <Search className="h-5 w-5 text-cyan-200 mb-3" />
                     <div className="text-white text-center font-light">
                       No matching events found
                     </div>
@@ -141,7 +141,7 @@ export default function Navbar({
                         setShowAddEventForm(true);
                         setShowSearchResults(false);
                       }}
-                      className="mt-4 px-4 py-1.5 bg-white/15 hover:bg-white/20 rounded-md text-sm transition-colors font-medium text-white"
+                      className="mt-4 px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded-full text-sm transition-colors font-medium text-white"
                     >
                       Create Event
                     </button>
