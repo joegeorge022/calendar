@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import Image from "next/image"
 import {
   ChevronLeft,
@@ -9,43 +9,198 @@ import {
   Search,
   Settings,
   Menu,
-  Clock,
-  MapPin,
-  Users,
-  Calendar,
   Pause,
   Sparkles,
   X,
+  Play,
+  Music,
 } from "lucide-react"
+import { useCalendar } from "@/lib/CalendarContext"
+import { formatMonthDay, getToday, getPrevWeek, getNextWeek } from "@/lib/dateUtils"
+import { getCurrentSong, SongInfo, getRandomSongExcept, getSongById } from "@/lib/musicUtils"
+
+import WeekView from "./components/WeekView"
+import DayView from "./components/DayView"
+import MonthView from "./components/MonthView"
+import MiniCalendar from "./components/MiniCalendar"
+import EventDetail from "./components/EventDetail"
+import EventForm from "./components/EventForm"
 
 export default function Home() {
+  const { 
+    currentDate, 
+    setCurrentDate, 
+    currentView, 
+    setCurrentView, 
+    selectedEvent,
+  } = useCalendar()
+  
   const [isLoaded, setIsLoaded] = useState(false)
   const [showAIPopup, setShowAIPopup] = useState(false)
   const [typedText, setTypedText] = useState("")
+  const [isTypingComplete, setIsTypingComplete] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [showAddEventForm, setShowAddEventForm] = useState(false)
+  const [showFloatingMusicControl, setShowFloatingMusicControl] = useState(false)
+  const [isHoveringMusicControl, setIsHoveringMusicControl] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [currentSong, setCurrentSong] = useState<SongInfo>(getCurrentSong())
+  const [isDraggingTimeline, setIsDraggingTimeline] = useState(false)
+  
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const progressBarRef = useRef<HTMLDivElement>(null)
+  
+  const updateProgress = useCallback(() => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  }, []);
+  
+  const createAndSetupAudio = useCallback((src: string) => {
+    console.log("[Audio] Creating new audio element with source:", src);
+    
+    const newAudio = new Audio(src);
+    
+    if (audioRef.current) {
+      console.log("[Audio] Cleaning up previous audio element");
+      
+      try {
+        audioRef.current.onended = null;
+        audioRef.current.ontimeupdate = null;
+        audioRef.current.onloadedmetadata = null;
+        audioRef.current.onerror = null;
+        
+        audioRef.current.pause();
+        audioRef.current.src = '';
+        audioRef.current.load();
+      } catch (err) {
+        console.error("[Audio] Error during cleanup:", err);
+      }
+    }
+    
+    audioRef.current = newAudio;
+    
+    audioRef.current.ontimeupdate = updateProgress;
+    
+    audioRef.current.onloadedmetadata = () => {
+      console.log("[Audio] Metadata loaded, duration:", newAudio.duration);
+      setDuration(newAudio.duration);
+    };
+    
+    audioRef.current.onerror = (e) => {
+      console.error("[Audio] Error with audio element:", e);
+    };
+    
+    return newAudio;
+  }, [updateProgress]);
+  
+  const playSong = useCallback((song: SongInfo) => {
+    console.log("[Audio] Playing song:", song.title, "file:", song.file);
+    
+    setCurrentSong(song);
+    
+    const audio = createAndSetupAudio(song.file);
+    
+    setIsPlaying(true);
+    
+    setCurrentTime(0);
+    
+    audio.onended = () => {
+      console.log("[Audio] Song ended, picking a new song");
+      
+      const nextSong = getRandomSongExcept(song.id);
+      console.log("[Audio] Selected next song:", nextSong.title, "with ID:", nextSong.id);
+      
+      playSong(nextSong);
+    };
+    
+    setTimeout(() => {
+      console.log("[Audio] Starting playback after delay");
+      try {
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              console.log("[Audio] Successfully started playback");
+            })
+            .catch((error: Error) => {
+              console.error("[Audio] Failed to start playback:", error);
+              
+              const playOnUserInteraction = () => {
+                console.log("[Audio] User interaction detected, trying to play again");
+                audio.play()
+                  .then(() => console.log("[Audio] Playback started after user interaction"))
+                  .catch((err: Error) => console.error("[Audio] Still failed to play:", err));
+                document.removeEventListener('click', playOnUserInteraction);
+              };
+              
+              document.addEventListener('click', playOnUserInteraction, { once: true });
+            });
+        }
+      } catch (err) {
+        console.error("[Audio] Unexpected error starting playback:", err);
+      }
+    }, 100);
+  }, [createAndSetupAudio]);
 
-  useEffect(() => {
-    setIsLoaded(true)
+  const togglePlay = useCallback(() => {
+    console.log("[Audio] Toggle play called, current state:", isPlaying);
+    const newPlayingState = !isPlaying;
+    setIsPlaying(newPlayingState);
+    
+    if (newPlayingState) {
+      console.log("[Audio] Attempting to play audio");
+      if (!audioRef.current) {
+        console.log("[Audio] No audio element, creating new one");
+        const song = getCurrentSong();
+        playSong(song);
+      } else {
+        console.log("[Audio] Playing existing audio");
+        audioRef.current.play().catch(err => {
+          console.error("[Audio] Error playing audio:", err);
+          playSong(currentSong);
+        });
+      }
+    } else {
+      console.log("[Audio] Pausing audio");
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    }
+  }, [isPlaying, currentSong, playSong]);
 
-    // Show AI popup after 3 seconds
-    const popupTimer = setTimeout(() => {
-      setShowAIPopup(true)
-    }, 3000)
+  const handleYesClick = useCallback(() => {
+    console.log("[Audio] Yes button clicked - starting music");
+    
+    setShowAIPopup(false);
+    setShowFloatingMusicControl(true);
+    
+    const song = getCurrentSong();
+    playSong(song);
+  }, [playSong]);
 
-    return () => clearTimeout(popupTimer)
-  }, [])
+  const formatTime = (time: number) => {
+    const minutes = Math.floor(time / 60)
+    const seconds = Math.floor(time % 60)
+    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`
+  }
 
   useEffect(() => {
     if (showAIPopup) {
       const text =
-        "LLooks like you don't have that many meetings today. Shall I play some Hans Zimmer essentials to help you get into your Flow State?"
+        "Looks like you don't have that many meetings today. Shall I play some music to help you get into your Flow State?"
       let i = 0
+      setTypedText("")
+      setIsTypingComplete(false)
       const typingInterval = setInterval(() => {
         if (i < text.length) {
           setTypedText((prev) => prev + text.charAt(i))
           i++
         } else {
           clearInterval(typingInterval)
+          setIsTypingComplete(true)
         }
       }, 50)
 
@@ -53,234 +208,45 @@ export default function Home() {
     }
   }, [showAIPopup])
 
-  const [currentView, setCurrentView] = useState("week")
-  const [currentMonth, _setCurrentMonth] = useState("May 2025")
-  const [currentDate, _setCurrentDate] = useState("May 5")
-  type CalendarEvent = {
-    id: number
-    title: string
-    startTime: string
-    endTime: string
-    color: string
-    day: number
-    description: string
-    location: string
-    attendees: string[]
-    organizer: string
+  const handlePrevPeriod = () => {
+    if (currentView === 'week') {
+      setCurrentDate(getPrevWeek(currentDate));
+    } else if (currentView === 'month') {
+      const prevMonth = new Date(currentDate);
+      prevMonth.setMonth(prevMonth.getMonth() - 1);
+      setCurrentDate(prevMonth);
+    } else if (currentView === 'day') {
+      const prevDay = new Date(currentDate);
+      prevDay.setDate(prevDay.getDate() - 1);
+      setCurrentDate(prevDay);
+    }
+  };
+
+  const handleNextPeriod = () => {
+    if (currentView === 'week') {
+      setCurrentDate(getNextWeek(currentDate));
+    } else if (currentView === 'month') {
+      const nextMonth = new Date(currentDate);
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      setCurrentDate(nextMonth);
+    } else if (currentView === 'day') {
+      const nextDay = new Date(currentDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+      setCurrentDate(nextDay);
+    }
+  };
+
+  const handleTodayClick = () => {
+    setCurrentDate(getToday());
+  };
+
+  const handleClosePopup = () => {
+    setShowAIPopup(false);
+    if (isPlaying) {
+      setShowFloatingMusicControl(true);
+    }
   }
 
-  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
-
-  const handleEventClick = (event: CalendarEvent) => {
-    setSelectedEvent(event)
-  }
-
-  // Updated sample calendar events with all events before 4 PM
-  const events = [
-    {
-      id: 1,
-      title: "Team Meeting",
-      startTime: "09:00",
-      endTime: "10:00",
-      color: "bg-blue-500",
-      day: 1,
-      description: "Weekly team sync-up",
-      location: "Conference Room A",
-      attendees: ["John Doe", "Jane Smith", "Bob Johnson"],
-      organizer: "Alice Brown",
-    },
-    {
-      id: 2,
-      title: "Lunch with Sarah",
-      startTime: "12:30",
-      endTime: "13:30",
-      color: "bg-green-500",
-      day: 1,
-      description: "Discuss project timeline",
-      location: "Cafe Nero",
-      attendees: ["Sarah Lee"],
-      organizer: "You",
-    },
-    {
-      id: 3,
-      title: "Project Review",
-      startTime: "14:00",
-      endTime: "15:30",
-      color: "bg-purple-500",
-      day: 3,
-      description: "Q2 project progress review",
-      location: "Meeting Room 3",
-      attendees: ["Team Alpha", "Stakeholders"],
-      organizer: "Project Manager",
-    },
-    {
-      id: 4,
-      title: "Client Call",
-      startTime: "10:00",
-      endTime: "11:00",
-      color: "bg-yellow-500",
-      day: 2,
-      description: "Quarterly review with major client",
-      location: "Zoom Meeting",
-      attendees: ["Client Team", "Sales Team"],
-      organizer: "Account Manager",
-    },
-    {
-      id: 5,
-      title: "Team Brainstorm",
-      startTime: "13:00",
-      endTime: "14:30",
-      color: "bg-indigo-500",
-      day: 4,
-      description: "Ideation session for new product features",
-      location: "Creative Space",
-      attendees: ["Product Team", "Design Team"],
-      organizer: "Product Owner",
-    },
-    {
-      id: 6,
-      title: "Product Demo",
-      startTime: "11:00",
-      endTime: "12:00",
-      color: "bg-pink-500",
-      day: 5,
-      description: "Showcase new features to stakeholders",
-      location: "Demo Room",
-      attendees: ["Stakeholders", "Dev Team"],
-      organizer: "Tech Lead",
-    },
-    {
-      id: 7,
-      title: "Marketing Meeting",
-      startTime: "13:00",
-      endTime: "14:00",
-      color: "bg-teal-500",
-      day: 6,
-      description: "Discuss Q3 marketing strategy",
-      location: "Marketing Office",
-      attendees: ["Marketing Team"],
-      organizer: "Marketing Director",
-    },
-    {
-      id: 8,
-      title: "Code Review",
-      startTime: "15:00",
-      endTime: "16:00",
-      color: "bg-cyan-500",
-      day: 7,
-      description: "Review pull requests for new feature",
-      location: "Dev Area",
-      attendees: ["Dev Team"],
-      organizer: "Senior Developer",
-    },
-    {
-      id: 9,
-      title: "Morning Standup",
-      startTime: "08:30",
-      endTime: "09:30", // Changed from "09:00" to "09:30"
-      color: "bg-blue-400",
-      day: 2,
-      description: "Daily team standup",
-      location: "Slack Huddle",
-      attendees: ["Development Team"],
-      organizer: "Scrum Master",
-    },
-    {
-      id: 10,
-      title: "Design Review",
-      startTime: "14:30",
-      endTime: "15:45",
-      color: "bg-purple-400",
-      day: 5,
-      description: "Review new UI designs",
-      location: "Design Lab",
-      attendees: ["UX Team", "Product Manager"],
-      organizer: "Lead Designer",
-    },
-    {
-      id: 11,
-      title: "Investor Meeting",
-      startTime: "10:30",
-      endTime: "12:00",
-      color: "bg-red-400",
-      day: 7,
-      description: "Quarterly investor update",
-      location: "Board Room",
-      attendees: ["Executive Team", "Investors"],
-      organizer: "CEO",
-    },
-    {
-      id: 12,
-      title: "Team Training",
-      startTime: "09:30",
-      endTime: "11:30",
-      color: "bg-green-400",
-      day: 4,
-      description: "New tool onboarding session",
-      location: "Training Room",
-      attendees: ["All Departments"],
-      organizer: "HR",
-    },
-    {
-      id: 13,
-      title: "Budget Review",
-      startTime: "13:30",
-      endTime: "15:00",
-      color: "bg-yellow-400",
-      day: 3,
-      description: "Quarterly budget analysis",
-      location: "Finance Office",
-      attendees: ["Finance Team", "Department Heads"],
-      organizer: "CFO",
-    },
-    {
-      id: 14,
-      title: "Client Presentation",
-      startTime: "11:00",
-      endTime: "12:30",
-      color: "bg-orange-400",
-      day: 6,
-      description: "Present new project proposal",
-      location: "Client Office",
-      attendees: ["Sales Team", "Client Representatives"],
-      organizer: "Account Executive",
-    },
-    {
-      id: 15,
-      title: "Product Planning",
-      startTime: "14:00",
-      endTime: "15:30",
-      color: "bg-pink-400",
-      day: 1,
-      description: "Roadmap discussion for Q3",
-      location: "Strategy Room",
-      attendees: ["Product Team", "Engineering Leads"],
-      organizer: "Product Manager",
-    },
-  ]
-
-  // Sample calendar days for the week view
-  const weekDays = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
-  const weekDates = [3, 4, 5, 6, 7, 8, 9]
-  const timeSlots = Array.from({ length: 9 }, (_, i) => i + 8) // 8 AM to 4 PM
-
-  // Helper function to calculate event position and height
-  const calculateEventStyle = (startTime, endTime) => {
-    const start = Number.parseInt(startTime.split(":")[0]) + Number.parseInt(startTime.split(":")[1]) / 60
-    const end = Number.parseInt(endTime.split(":")[0]) + Number.parseInt(endTime.split(":")[1]) / 60
-    const top = (start - 8) * 80 // 80px per hour
-    const height = (end - start) * 80
-    return { top: `${top}px`, height: `${height}px` }
-  }
-
-  // Sample calendar for mini calendar
-  const daysInMonth = 31
-  const firstDayOffset = 5 // Friday is the first day of the month in this example
-  const miniCalendarDays = Array.from({ length: daysInMonth + firstDayOffset }, (_, i) =>
-    i < firstDayOffset ? null : i - firstDayOffset + 1,
-  )
-
-  // Sample my calendars
   const myCalendars = [
     { name: "My Calendar", color: "bg-blue-500" },
     { name: "Work", color: "bg-green-500" },
@@ -288,10 +254,109 @@ export default function Home() {
     { name: "Family", color: "bg-orange-500" },
   ]
 
-  const togglePlay = () => {
-    setIsPlaying(!isPlaying)
-    // Here you would typically also control the actual audio playback
-  }
+  const handleMouseEnter = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    setIsHoveringMusicControl(true);
+  };
+
+  const handleMouseLeave = () => {
+    hoverTimeoutRef.current = setTimeout(() => {
+      setIsHoveringMusicControl(false);
+    }, 500);
+  };
+
+  const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!progressBarRef.current || !audioRef.current) return;
+    
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const clickPosition = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+    const percentage = clickPosition / rect.width;
+    const newTime = percentage * duration;
+    
+    audioRef.current.currentTime = newTime;
+    setCurrentTime(newTime);
+  };
+  
+  const handleTimelineDragStart = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!progressBarRef.current || !audioRef.current) return;
+    
+    setIsDraggingTimeline(true);
+    
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const dragPosition = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+    const percentage = dragPosition / rect.width;
+    const newTime = percentage * duration;
+    
+    audioRef.current.currentTime = newTime;
+    setCurrentTime(newTime);
+  };
+  
+  const handleTimelineDragMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDraggingTimeline || !progressBarRef.current || !audioRef.current) return;
+    
+    const rect = progressBarRef.current.getBoundingClientRect();
+    const dragPosition = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+    const percentage = dragPosition / rect.width;
+    const newTime = percentage * duration;
+    
+    requestAnimationFrame(() => {
+      audioRef.current!.currentTime = newTime;
+      setCurrentTime(newTime);
+    });
+  };
+  
+  const handleTimelineDragEnd = () => {
+    setIsDraggingTimeline(false);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDraggingTimeline && progressBarRef.current && audioRef.current) {
+        const rect = progressBarRef.current.getBoundingClientRect();
+        const dragPosition = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+        const percentage = dragPosition / rect.width;
+        const newTime = percentage * duration;
+        
+        requestAnimationFrame(() => {
+          audioRef.current!.currentTime = newTime;
+          setCurrentTime(newTime);
+        });
+      }
+    };
+    
+    const handleMouseUp = () => {
+      setIsDraggingTimeline(false);
+    };
+    
+    if (isDraggingTimeline) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+    
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingTimeline, duration]);
+
+  useEffect(() => {
+    setIsLoaded(true)
+    
+    const popupTimer = setTimeout(() => {
+      setShowAIPopup(true)
+    }, 3000)
+    
+    return () => {
+      clearTimeout(popupTimer)
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.currentTime = 0
+      }
+    }
+  }, []);
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden">
@@ -338,44 +403,16 @@ export default function Home() {
           style={{ animationDelay: "0.4s" }}
         >
           <div>
-            <button className="mb-6 flex items-center justify-center gap-2 rounded-full bg-blue-500 px-4 py-3 text-white w-full">
+            <button 
+              className="mb-6 flex items-center justify-center gap-2 rounded-full bg-blue-500 px-4 py-3 text-white w-full"
+              onClick={() => setShowAddEventForm(true)}
+            >
               <Plus className="h-5 w-5" />
               <span>Create</span>
             </button>
 
             {/* Mini Calendar */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-white font-medium">{currentMonth}</h3>
-                <div className="flex gap-1">
-                  <button className="p-1 rounded-full hover:bg-white/20">
-                    <ChevronLeft className="h-4 w-4 text-white" />
-                  </button>
-                  <button className="p-1 rounded-full hover:bg-white/20">
-                    <ChevronRight className="h-4 w-4 text-white" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-7 gap-1 text-center">
-                {["S", "M", "T", "W", "T", "F", "S"].map((day, i) => (
-                  <div key={i} className="text-xs text-white/70 font-medium py-1">
-                    {day}
-                  </div>
-                ))}
-
-                {miniCalendarDays.map((day, i) => (
-                  <div
-                    key={i}
-                    className={`text-xs rounded-full w-7 h-7 flex items-center justify-center ${
-                      day === 5 ? "bg-blue-500 text-white" : "text-white hover:bg-white/20"
-                    } ${!day ? "invisible" : ""}`}
-                  >
-                    {day}
-                  </div>
-                ))}
-              </div>
-            </div>
+            <MiniCalendar />
 
             {/* My Calendars */}
             <div>
@@ -392,7 +429,10 @@ export default function Home() {
           </div>
 
           {/* New position for the big plus button */}
-          <button className="mt-6 flex items-center justify-center gap-2 rounded-full bg-blue-500 p-4 text-white w-14 h-14 self-start">
+          <button 
+            className="mt-6 flex items-center justify-center gap-2 rounded-full bg-blue-500 p-4 text-white w-14 h-14 self-start"
+            onClick={() => setShowAddEventForm(true)}
+          >
             <Plus className="h-6 w-6" />
           </button>
         </div>
@@ -405,16 +445,27 @@ export default function Home() {
           {/* Calendar Controls */}
           <div className="flex items-center justify-between p-4 border-b border-white/20">
             <div className="flex items-center gap-4">
-              <button className="px-4 py-2 text-white bg-blue-500 rounded-md">Today</button>
+              <button 
+                className="px-4 py-2 text-white bg-blue-500 rounded-md"
+                onClick={handleTodayClick}
+              >
+                Today
+              </button>
               <div className="flex">
-                <button className="p-2 text-white hover:bg-white/10 rounded-l-md">
+                <button 
+                  className="p-2 text-white hover:bg-white/10 rounded-l-md"
+                  onClick={handlePrevPeriod}
+                >
                   <ChevronLeft className="h-5 w-5" />
                 </button>
-                <button className="p-2 text-white hover:bg-white/10 rounded-r-md">
+                <button 
+                  className="p-2 text-white hover:bg-white/10 rounded-r-md"
+                  onClick={handleNextPeriod}
+                >
                   <ChevronRight className="h-5 w-5" />
                 </button>
               </div>
-              <h2 className="text-xl font-semibold text-white">{currentDate}</h2>
+              <h2 className="text-xl font-semibold text-white">{formatMonthDay(currentDate)}</h2>
             </div>
 
             <div className="flex items-center gap-2 rounded-md p-1">
@@ -439,67 +490,11 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Week View */}
+          {/* Selected Calendar View */}
           <div className="flex-1 overflow-auto p-4">
-            <div className="bg-white/20 backdrop-blur-lg rounded-xl border border-white/20 shadow-xl h-full">
-              {/* Week Header */}
-              <div className="grid grid-cols-8 border-b border-white/20">
-                <div className="p-2 text-center text-white/50 text-xs"></div>
-                {weekDays.map((day, i) => (
-                  <div key={i} className="p-2 text-center border-l border-white/20">
-                    <div className="text-xs text-white/70 font-medium">{day}</div>
-                    <div
-                      className={`text-lg font-medium mt-1 text-white ${weekDates[i] === 5 ? "bg-blue-500 rounded-full w-8 h-8 flex items-center justify-center mx-auto" : ""}`}
-                    >
-                      {weekDates[i]}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Time Grid */}
-              <div className="grid grid-cols-8">
-                {/* Time Labels */}
-                <div className="text-white/70">
-                  {timeSlots.map((time, i) => (
-                    <div key={i} className="h-20 border-b border-white/10 pr-2 text-right text-xs">
-                      {time > 12 ? `${time - 12} PM` : `${time} AM`}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Days Columns */}
-                {Array.from({ length: 7 }).map((_, dayIndex) => (
-                  <div key={dayIndex} className="border-l border-white/20 relative">
-                    {timeSlots.map((_, timeIndex) => (
-                      <div key={timeIndex} className="h-20 border-b border-white/10"></div>
-                    ))}
-
-                    {/* Events */}
-                    {events
-                      .filter((event) => event.day === dayIndex + 1)
-                      .map((event, i) => {
-                        const eventStyle = calculateEventStyle(event.startTime, event.endTime)
-                        return (
-                          <div
-                            key={i}
-                            className={`absolute ${event.color} rounded-md p-2 text-white text-xs shadow-md cursor-pointer transition-all duration-200 ease-in-out hover:translate-y-[-2px] hover:shadow-lg`}
-                            style={{
-                              ...eventStyle,
-                              left: "4px",
-                              right: "4px",
-                            }}
-                            onClick={() => handleEventClick(event)}
-                          >
-                            <div className="font-medium">{event.title}</div>
-                            <div className="opacity-80 text-[10px] mt-1">{`${event.startTime} - ${event.endTime}`}</div>
-                          </div>
-                        )
-                      })}
-                  </div>
-                ))}
-              </div>
-            </div>
+            {currentView === "week" && <WeekView />}
+            {currentView === "day" && <DayView />}
+            {currentView === "month" && <MonthView />}
           </div>
         </div>
 
@@ -508,7 +503,7 @@ export default function Home() {
           <div className="fixed bottom-8 right-8 z-20">
             <div className="w-[450px] relative bg-gradient-to-br from-blue-400/30 via-blue-500/30 to-blue-600/30 backdrop-blur-lg p-6 rounded-2xl shadow-xl border border-blue-300/30 text-white">
               <button
-                onClick={() => setShowAIPopup(false)}
+                onClick={handleClosePopup}
                 className="absolute top-2 right-2 text-white/70 hover:text-white transition-colors"
               >
                 <X className="h-5 w-5" />
@@ -521,28 +516,20 @@ export default function Home() {
                   <p className="text-base font-light">{typedText}</p>
                 </div>
               </div>
-              <div className="mt-6 flex gap-3">
-                <button
-                  onClick={togglePlay}
-                  className="flex-1 py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-sm transition-colors font-medium"
-                >
-                  Yes
-                </button>
-                <button
-                  onClick={() => setShowAIPopup(false)}
-                  className="flex-1 py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-sm transition-colors font-medium"
-                >
-                  No
-                </button>
-              </div>
-              {isPlaying && (
-                <div className="mt-4 flex items-center justify-between">
+              
+              {isTypingComplete && (
+                <div className="mt-6 flex gap-3 animate-fade-in">
                   <button
-                    className="flex items-center justify-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-white text-sm hover:bg-white/20 transition-colors"
-                    onClick={togglePlay}
+                    onClick={handleYesClick}
+                    className="flex-1 py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-sm transition-colors font-medium"
                   >
-                    <Pause className="h-4 w-4" />
-                    <span>Pause Hans Zimmer</span>
+                    Yes
+                  </button>
+                  <button
+                    onClick={handleClosePopup}
+                    className="flex-1 py-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-sm transition-colors font-medium"
+                  >
+                    No
                   </button>
                 </div>
               )}
@@ -550,51 +537,82 @@ export default function Home() {
           </div>
         )}
 
-        {selectedEvent && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className={`${selectedEvent.color} p-6 rounded-lg shadow-xl max-w-md w-full mx-4`}>
-              <h3 className="text-2xl font-bold mb-4 text-white">{selectedEvent.title}</h3>
-              <div className="space-y-3 text-white">
-                <p className="flex items-center">
-                  <Clock className="mr-2 h-5 w-5" />
-                  {`${selectedEvent.startTime} - ${selectedEvent.endTime}`}
-                </p>
-                <p className="flex items-center">
-                  <MapPin className="mr-2 h-5 w-5" />
-                  {selectedEvent.location}
-                </p>
-                <p className="flex items-center">
-                  <Calendar className="mr-2 h-5 w-5" />
-                  {`${weekDays[selectedEvent.day - 1]}, ${weekDates[selectedEvent.day - 1]} ${currentMonth}`}
-                </p>
-                <p className="flex items-start">
-                  <Users className="mr-2 h-5 w-5 mt-1" />
-                  <span>
-                    <strong>Attendees:</strong>
-                    <br />
-                    {selectedEvent.attendees.join(", ") || "No attendees"}
-                  </span>
-                </p>
-                <p>
-                  <strong>Organizer:</strong> {selectedEvent.organizer}
-                </p>
-                <p>
-                  <strong>Description:</strong> {selectedEvent.description}
-                </p>
+        {/* Floating Music Control when popup is closed but music is playing */}
+        {showFloatingMusicControl && (
+          <div className="fixed bottom-8 right-8 z-20 opacity-0 animate-fade-in">
+            {/* Hover info card - Apple Music inspired */}
+            <div 
+              className={`absolute bottom-16 right-0 w-64 bg-gradient-to-br from-blue-400/80 via-blue-500/80 to-blue-600/80 backdrop-blur-lg p-4 rounded-xl shadow-xl border border-blue-300/30 text-white mb-2 transition-all duration-300 ease-in-out ${isHoveringMusicControl ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-md bg-blue-300/20 flex items-center justify-center">
+                  <Music className="h-6 w-6 text-blue-100" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-medium text-sm leading-tight">{currentSong.title}</h4>
+                  <p className="text-xs text-white/80">{currentSong.artist}</p>
+                </div>
               </div>
-              <div className="mt-6 flex justify-end">
-                <button
-                  className="bg-white text-gray-800 px-4 py-2 rounded hover:bg-gray-100 transition-colors"
-                  onClick={() => setSelectedEvent(null)}
-                >
-                  Close
-                </button>
+              
+              {/* Progress bar with improved bidirectional responsiveness */}
+              <div 
+                ref={progressBarRef}
+                className="w-full h-1 bg-white/20 rounded-full mb-1.5 mt-3 cursor-pointer group relative"
+                onClick={handleTimelineClick}
+                onMouseDown={handleTimelineDragStart}
+                onMouseMove={handleTimelineDragMove}
+                onMouseUp={handleTimelineDragEnd}
+                onMouseLeave={() => isDraggingTimeline && handleTimelineDragEnd()}
+              >
+                <div 
+                  className="absolute inset-0 h-full bg-white/80 rounded-full"
+                  style={{
+                    width: `${(currentTime / duration) * 100}%`,
+                    transition: isDraggingTimeline ? 'none' : 'width 300ms linear'
+                  }}
+                ></div>
+                
+                {/* Drag handle with improved positioning */}
+                <div 
+                  className={`absolute w-3 h-3 bg-white rounded-full shadow-lg top-1/2 -translate-y-1/2 ${isDraggingTimeline ? 'opacity-100 scale-110' : 'opacity-0 group-hover:opacity-100'}`}
+                  style={{
+                    left: `${(currentTime / duration) * 100}%`,
+                    transform: `translateY(-50%) translateX(-50%)`,
+                    transition: isDraggingTimeline ? 'none' : 'left 300ms linear, opacity 200ms ease'
+                  }}
+                ></div>
+              </div>
+              
+              {/* Time */}
+              <div className="flex justify-between text-xs text-white/80">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
               </div>
             </div>
+            
+            {/* Circular play/pause button */}
+            <button
+              onClick={() => {
+                togglePlay();
+              }}
+              className="w-12 h-12 flex items-center justify-center rounded-full bg-blue-500/70 backdrop-blur-lg shadow-xl border border-blue-300/30 text-white hover:bg-blue-500/80 transition-colors"
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
+            >
+              {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+            </button>
           </div>
         )}
 
-        {/* Floating Action Button - Removed */}
+        {/* Event Detail View */}
+        {selectedEvent && <EventDetail />}
+        
+        {/* Add Event Form */}
+        {showAddEventForm && (
+          <EventForm onClose={() => setShowAddEventForm(false)} />
+        )}
       </main>
     </div>
   )

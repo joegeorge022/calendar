@@ -53,6 +53,19 @@
       linear-gradient(to right, currentColor 1px, transparent 1px);
     background-size: 20px 20px;
   }
+  
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-in-out forwards;
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
 }
 
 .react-draggable {
